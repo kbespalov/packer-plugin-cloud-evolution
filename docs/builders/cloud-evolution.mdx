@@ -56,15 +56,9 @@ Plus the standard communicator (`ssh_username`, `ssh_private_key_file`, …).
 
 ## Notes
 
-- Do not send `cloud_init` against a public source image
-  (`cloud_init_is_given_for_not_private_image`).
-- `availability_zones[].enabled` is forbidden on image create.
-- VM list pagination is `offset`/`limit`, not `page_size`.
-- Teardown: delete the floating IP, then the VM. Immediate `DELETE` of a
-  stopped VM that just lost its FIP is `422 floating_ip_can_not_be_detached_*`.
-- `POST /api/v1/images` can return `organization_quota_exceeded` for
-  `compute.image.custome`. Delete an unused private image and retry.
-- A VM, disk, or image that enters `error`/`failed` fails the build immediately.
-- An image that is created but never becomes ready is deleted on teardown.
-- `disk_size_gb` must be at least the source image `min_disk`.
 - `zone` is the availability zone UUID, not the display name (`ru.AZ-2`).
+- `disk_size_gb` must be at least the source image `min_disk`.
+- Do not send `cloud_init` against a public source image.
+
+API quirks and timeouts: [api-notes.md](../api-notes.md).
+SSH, quota, apt mirrors: [troubleshooting.md](../troubleshooting.md).
