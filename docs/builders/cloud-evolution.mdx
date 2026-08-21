@@ -1,0 +1,62 @@
+---
+description: |
+  The cloud-evolution Packer builder creates private Cloud.ru Evolution Compute images
+  from existing catalog images.
+page_title: Cloud.ru Evolution - Builders
+sidebar_title: Evolution
+---
+
+# Cloud.ru Evolution Builder
+
+Type: `cloud-evolution`
+Artifact BuilderId: `packer.cloud-evolution`
+
+Creates a **private** [Evolution](https://cloud.ru) Compute image:
+
+1. Generate or load an SSH key
+2. `POST /api/v1.1/vms` with a one-element array
+3. Allocate a floating IP (optional, default on)
+4. SSH + provisioners
+5. Power off, detach the boot disk, wait `available`
+6. `POST /api/v1/images` from `disk_id`
+
+## Required
+
+- `project_id` (string) - Evolution project. Env `EVOLUTION_PROJECT_ID`.
+- `zone` (string) - Availability zone **UUID**.
+- `subnet_id` (string) - VPC subnet for the builder VM.
+- `flavor_id` (string) - Flavor UUID.
+- `source_image_id` (string) - Source catalog image.
+- `image_name` (string) - Private image name, unique in the project.
+- `key_id` / `key_secret` or `token` - IAM. Env `EVOLUTION_KEY_ID`,
+  `EVOLUTION_KEY_SECRET`, `EVOLUTION_TOKEN`.
+
+## Optional
+
+- `linux_login` (string) - `image_metadata.name`. Default `ubuntu`. Public
+  Ubuntu-24.04 only injects `public_key` for this login.
+- `disk_size_gb` (number) - Boot disk GiB. Default `10`.
+- `disk_type` (string) - `SSD` or `HDD`. Default `SSD`.
+- `instance_name` (string) - Default `packer-<uuid>`.
+- `image_description` (string)
+- `security_group_ids` ([]string)
+- `use_floating_ip` (bool) - Default `true`. FIP is created **after** the NIC
+  exists; `new_floating_ip` on create is rejected.
+- `skip_create_image` (bool) - Provision only.
+- `state_timeout` (duration) - Default `15m`.
+- `poll_interval` (duration) - Default `5s`.
+- `compute_url`, `iam_url` - Override API hosts.
+
+Plus the standard communicator (`ssh_username`, `ssh_private_key_file`, …).
+
+## Build variables
+
+- `ImageID`, `ImageName`, `ImageType`
+- `SourceImageID`, `SourceImageName`
+
+## Notes
+
+- Do not send `cloud_init` against a public source image
+  (`cloud_init_is_given_for_not_private_image`).
+- `availability_zones[].enabled` is forbidden on image create.
+- VM list pagination is `offset`/`limit`, not `page_size`.

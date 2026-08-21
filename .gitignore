@@ -1,0 +1,9 @@
+/packer-plugin-cloud-evolution
+/packer-plugin-cloud-evolution.exe
+/dist/
+*.pem
+.docs/
+coverage.out
+.idea/
+.vscode/
+.DS_Store
