@@ -1,0 +1,33 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+      - name: Plugin API version
+        id: describe
+        run: |
+          v=$(go run . describe | jq -r .api_version)
+          test -n "$v" && test "$v" != "null"
+          echo "api_version=$v" >> "$GITHUB_OUTPUT"
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_VERSION: ${{ steps.describe.outputs.api_version }}

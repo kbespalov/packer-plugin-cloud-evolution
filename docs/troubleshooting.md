@@ -2,7 +2,12 @@
 
 ## `packer init` cannot download the plugin
 
-There is no GitHub Release with GoReleaser zip + `SHA256SUMS` yet. Install from source (`make dev`). Until a release exists, `packer init` will fail to fetch `github.com/kbespalov/cloud-evolution`.
+Packer fetches a published GitHub Release for tag `vX.Y.Z` with:
+
+- `packer-plugin-cloud-evolution_vX.Y.Z_SHA256SUMS`
+- `packer-plugin-cloud-evolution_vX.Y.Z_x5.0_{os}_{arch}.zip`
+
+A draft release, a source-only GitHub “Release”, or a missing `SHA256SUMS` file will fail. Use `make dev` to install a local binary.
 
 In `required_plugins`, the source must be `github.com/kbespalov/cloud-evolution` (not `…/packer-plugin-cloud-evolution`). Packer inserts `packer-plugin-` itself.
 

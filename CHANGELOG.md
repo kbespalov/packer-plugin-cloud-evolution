@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-08-22)
 
 - Initial `cloud-evolution` builder: IAM key/token, VM `[one]`, floating IP after NIC,
   stop → detach → private image from disk.

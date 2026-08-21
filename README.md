@@ -2,16 +2,15 @@
 
 Build private [Cloud.ru](https://cloud.ru) Evolution Compute images with [HashiCorp Packer](https://www.packer.io/).
 
-Community project, not published by Cloud.ru or HashiCorp. Installing from source needs Packer and Go 1.22+.
+Community project, not published by Cloud.ru or HashiCorp. Needs [Packer](https://developer.hashicorp.com/packer/install).
 
 ## Quick start
 
-`packer init` cannot download this plugin until a GitHub Release exists. Install the local binary:
+From this repository (or any template with the `required_plugins` block below):
 
 ```bash
 git clone https://github.com/kbespalov/packer-plugin-cloud-evolution.git
 cd packer-plugin-cloud-evolution
-make dev
 ```
 
 ```bash
@@ -27,10 +26,13 @@ export CLOUDRU_EVOLUTION_SOURCE_IMAGE_ID=...    # public Ubuntu-24.04 works
 The service account needs create/delete on VMs, disks, floating IPs, and images. A bake creates a VM, floating IP, and disk for about 15–25 minutes; public Ubuntu spends most of that in guest cloud-init.
 
 ```bash
+packer init examples/minimal
 packer build examples/minimal
 ```
 
 That creates a private image named `example-golden`. Packer prints the image id on success, then deletes the builder VM, floating IP, and boot disk.
+
+From source instead of a GitHub release: `make dev` (Go 1.22+).
 
 `image_name` must be unique in the project. If `example-golden` already exists:
 

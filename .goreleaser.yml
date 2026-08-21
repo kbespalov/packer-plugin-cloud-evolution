@@ -1,5 +1,12 @@
-# Recommended HashiCorp plugin release layout.
-# packer init needs a GitHub repo named packer-plugin-* and these assets.
+# Packer github-getter fetches these exact names (tag v0.1.0 → Version 0.1.0):
+#   packer-plugin-cloud-evolution_v0.1.0_SHA256SUMS
+#   packer-plugin-cloud-evolution_v0.1.0_x5.0_{os}_{arch}.zip
+# The zip must contain a binary with the same stem.
+# API_VERSION comes from `go run . describe` (x5.0).
+version: 2
+
+project_name: packer-plugin-cloud-evolution
+
 builds:
   - env:
       - CGO_ENABLED=0
@@ -18,27 +25,20 @@ builds:
     ignore:
       - goos: windows
         goarch: arm64
-    binary: "{{ .ProjectName }}_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    binary: "{{ .ProjectName }}_v{{ .Version }}_{{ .Env.API_VERSION }}_{{ .Os }}_{{ .Arch }}"
 
 archives:
-  - format: zip
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - formats: [zip]
+    name_template: "{{ .ProjectName }}_v{{ .Version }}_{{ .Env.API_VERSION }}_{{ .Os }}_{{ .Arch }}"
     files:
       - none*
 
 checksum:
-  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+  name_template: "{{ .ProjectName }}_v{{ .Version }}_SHA256SUMS"
   algorithm: sha256
 
-signs:
-  - artifacts: checksum
-    cmd: cosign
-    args: ["sign-blob", "--yes", "--output-signature=${signature}", "${artifact}"]
-    signature: ${artifact}.sig
-    optional: true
-
 release:
-  draft: true
+  draft: false
 
 changelog:
   sort: asc

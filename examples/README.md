@@ -1,8 +1,8 @@
 # Examples
 
-Install the plugin (`make dev` from the repo root) and set `CLOUDRU_EVOLUTION_*`
-as in the [README quick start](../README.md#quick-start). Do not put keys in HCL.
-`env()` is valid only as a variable `default`.
+Install the plugin (`packer init examples/minimal`, or `make dev` from source)
+and set `CLOUDRU_EVOLUTION_*` as in the [README quick start](../README.md#quick-start).
+Do not put keys in HCL. `env()` is valid only as a variable `default`.
 
 | Directory | What it bakes |
 | --- | --- |
