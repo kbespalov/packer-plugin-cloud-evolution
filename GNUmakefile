@@ -11,7 +11,7 @@ build:
 	go build -o ${BINARY}
 
 dev:
-	go build -ldflags="-X '${PLUGIN_FQN}/version.VersionPrerelease=dev'" -o ${BINARY}
+	go build -o ${BINARY}
 	packer plugins install --path ${BINARY} "$(shell echo "${PLUGIN_FQN}" | sed 's/packer-plugin-//')"
 
 fmt:

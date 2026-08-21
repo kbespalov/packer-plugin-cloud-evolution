@@ -24,7 +24,19 @@ func (s *stepCreateImage) Run(ctx context.Context, state multistep.StateBag) mul
 		ui.Say("Skipping image creation")
 		return multistep.ActionContinue
 	}
-	diskID := state.Get("disk_id").(string)
+	found, err := driver.FindImage(ctx, cfg.ImageName)
+	exists, err := lookupExists(found.ID, err)
+	if err != nil {
+		return stepHalt(state, fmt.Errorf("check image_name %q: %w", cfg.ImageName, err))
+	}
+	if exists {
+		return stepHalt(state, fmt.Errorf("image_name %q already exists (id=%s); Evolution names are unique per project", cfg.ImageName, found.ID))
+	}
+	rawDisk, ok := state.GetOk("disk_id")
+	diskID, _ := rawDisk.(string)
+	if !ok || diskID == "" {
+		return stepHalt(state, fmt.Errorf("disk_id is not set; cannot create image"))
+	}
 	template := ""
 	if raw, ok := state.GetOk("source_image"); ok {
 		template = raw.(Image).UserDataTemplate
@@ -41,12 +53,18 @@ func (s *stepCreateImage) Run(ctx context.Context, state multistep.StateBag) mul
 		UserDataTemplate: template,
 	})
 	if err != nil {
+		err = annotateQuota(err)
+		if alreadyExists(err) {
+			return stepHalt(state, fmt.Errorf("image_name %q already exists: %w", cfg.ImageName, err))
+		}
 		return stepHalt(state, fmt.Errorf("create image: %w", err))
 	}
+	// Track immediately so Cleanup can drop a failed catalog entry (quota).
+	state.Put("image_id", img.ID)
 	ui.Say(fmt.Sprintf("Waiting for image %s (this often takes several minutes)...", img.ID))
 	ready, err := driver.WaitImage(ctx, img.ID)
 	if err != nil {
-		return stepHalt(state, fmt.Errorf("wait image: %w", err))
+		return stepHalt(state, fmt.Errorf("wait image: %w", annotateQuota(err)))
 	}
 	if ready.Public {
 		return stepHalt(state, fmt.Errorf("created image %s is public; expected private", ready.ID))
@@ -61,4 +79,24 @@ func (s *stepCreateImage) Run(ctx context.Context, state multistep.StateBag) mul
 	return multistep.ActionContinue
 }
 
-func (s *stepCreateImage) Cleanup(multistep.StateBag) {}
+func (s *stepCreateImage) Cleanup(state multistep.StateBag) {
+	if _, ok := state.GetOk("image"); ok {
+		return
+	}
+	raw, ok := state.GetOk("image_id")
+	if !ok {
+		return
+	}
+	id, _ := raw.(string)
+	if id == "" {
+		return
+	}
+	ui := uiFromState(state)
+	driver := state.Get("driver").(Driver)
+	ctx, cancel := cleanupContext(state)
+	defer cancel()
+	ui.Say(fmt.Sprintf("Deleting incomplete image %s...", id))
+	if err := ignoreNotFound(driver.DeleteImage(ctx, id)); err != nil {
+		ui.Error(fmt.Sprintf("delete image %s: %s (delete it manually; it still counts against custom-image quota)", id, err))
+	}
+}

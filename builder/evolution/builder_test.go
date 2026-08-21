@@ -14,7 +14,7 @@ import (
 )
 
 func TestBuilderPrepareGeneratedData(t *testing.T) {
-	t.Parallel()
+	clearEvolutionEnv(t)
 	var b Builder
 	generated, _, err := b.Prepare(validRaw())
 	if err != nil {
@@ -32,7 +32,7 @@ func TestBuilderPrepareGeneratedData(t *testing.T) {
 }
 
 func TestBuilderRunSkipCreateImage(t *testing.T) {
-	t.Parallel()
+	clearEvolutionEnv(t)
 	driver := NewFakeDriver()
 	driver.images["img"] = Image{ID: "img", Name: "Ubuntu", Type: "public"}
 	raw := validRaw()

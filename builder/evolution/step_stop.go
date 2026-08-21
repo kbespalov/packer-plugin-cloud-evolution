@@ -16,7 +16,11 @@ type stepStopInstance struct{}
 func (s *stepStopInstance) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	ui := state.Get("ui").(packersdk.Ui)
 	driver := state.Get("driver").(Driver)
-	id := state.Get("instance_id").(string)
+	raw, ok := state.GetOk("instance_id")
+	id, _ := raw.(string)
+	if !ok || id == "" {
+		return stepHalt(state, fmt.Errorf("instance_id is not set; cannot stop"))
+	}
 	ui.Say("Stopping instance...")
 	if err := driver.StopInstance(ctx, id); err != nil {
 		return stepHalt(state, fmt.Errorf("stop instance: %w", err))

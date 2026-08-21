@@ -14,12 +14,17 @@ func TestAccBuilderPrepareLive(t *testing.T) {
 	if os.Getenv("PACKER_ACC") == "" {
 		t.Skip("PACKER_ACC is not set")
 	}
+	project := envTrim(EnvProjectID)
+	zone := envTrim(EnvZoneID)
+	subnet := envTrim(EnvSubnetID)
+	flavor := envTrim(EnvFlavorID)
+	source := envTrim(EnvSourceImageID)
 	raw := map[string]interface{}{
-		"project_id":      os.Getenv("EVOLUTION_PROJECT_ID"),
-		"zone":            os.Getenv("EVOLUTION_ZONE"),
-		"subnet_id":       os.Getenv("EVOLUTION_SUBNET_ID"),
-		"flavor_id":       os.Getenv("EVOLUTION_FLAVOR_ID"),
-		"source_image_id": os.Getenv("EVOLUTION_SOURCE_IMAGE_ID"),
+		"project_id":      project,
+		"zone":            zone,
+		"subnet_id":       subnet,
+		"flavor_id":       flavor,
+		"source_image_id": source,
 		"image_name":      "AccImage",
 		"ssh_username":    "ubuntu",
 	}

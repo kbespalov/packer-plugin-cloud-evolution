@@ -3,6 +3,12 @@
 
 package evolution
 
+import "strings"
+
+func normState(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
 // Instance is a Compute VM as the builder needs it.
 type Instance struct {
 	ID           string
@@ -16,9 +22,39 @@ type Instance struct {
 	BootDiskName string
 }
 
-func (i Instance) Running() bool { return i.State == "running" }
+func (i Instance) Running() bool { return normState(i.State) == "running" }
+
 func (i Instance) Stopped() bool {
-	return i.State == "stopped" || i.State == "shutoff" || i.State == "terminated"
+	switch normState(i.State) {
+	case "stopped", "shutoff", "terminated":
+		return true
+	default:
+		return false
+	}
+}
+
+func (i Instance) Stopping() bool {
+	switch normState(i.State) {
+	case "stopping", "powering_off", "shutting_down":
+		return true
+	default:
+		return false
+	}
+}
+
+func (i Instance) Failed() bool {
+	switch normState(i.State) {
+	case "error", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+// Provisionable is running with a NIC and a private address. The floating IP
+// is allocated after this; SSH may still use the public address.
+func (i Instance) Provisionable() bool {
+	return i.Running() && i.InterfaceID != "" && i.PrivateIP != ""
 }
 
 // Disk is a Compute volume.
@@ -30,8 +66,25 @@ type Disk struct {
 	Bootable bool
 }
 
-func (d Disk) Available() bool { return d.State == "available" }
-func (d Disk) InUse() bool     { return d.State == "in_use" || d.State == "in-use" }
+func (d Disk) Available() bool { return normState(d.State) == "available" }
+
+func (d Disk) InUse() bool {
+	switch normState(d.State) {
+	case "in_use", "in-use":
+		return true
+	default:
+		return false
+	}
+}
+
+func (d Disk) Failed() bool {
+	switch normState(d.State) {
+	case "error", "failed":
+		return true
+	default:
+		return false
+	}
+}
 
 // Image is a catalog entry (public or private).
 type Image struct {
@@ -39,6 +92,7 @@ type Image struct {
 	Name             string
 	Type             string
 	Public           bool
+	MinDiskGiB       int
 	UserDataTemplate string
 	ZoneStates       map[string]string
 }
@@ -57,8 +111,7 @@ func (img Image) Ready() bool {
 
 func (img Image) Failed() bool {
 	for _, state := range img.ZoneStates {
-		switch state {
-		case "error", "failed", "deleted", "unknown":
+		if imageZoneFailed(state) {
 			return true
 		}
 	}
@@ -66,8 +119,17 @@ func (img Image) Failed() bool {
 }
 
 func imageZoneReady(state string) bool {
-	switch state {
+	switch normState(state) {
 	case "created", "available", "ready", "active", "uploaded", "loaded", "ok":
+		return true
+	default:
+		return false
+	}
+}
+
+func imageZoneFailed(state string) bool {
+	switch normState(state) {
+	case "error", "failed", "deleted", "unknown":
 		return true
 	default:
 		return false

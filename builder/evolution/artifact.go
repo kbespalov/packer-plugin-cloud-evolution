@@ -50,5 +50,7 @@ func (a *Artifact) Destroy() error {
 		return nil
 	}
 	log.Printf("Destroying Evolution image %s", a.Image.ID)
-	return a.driver.DeleteImage(context.Background(), a.Image.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), artifactDestroyTimeout)
+	defer cancel()
+	return a.driver.DeleteImage(ctx, a.Image.ID)
 }

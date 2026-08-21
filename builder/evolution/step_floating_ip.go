@@ -20,6 +20,9 @@ func (s *stepFloatingIP) Run(ctx context.Context, state multistep.StateBag) mult
 	inst := state.Get("instance").(Instance)
 
 	if !cfg.floatingIP() {
+		if inst.PrivateIP == "" {
+			return stepHalt(state, fmt.Errorf("use_floating_ip=false but the instance has no private IP"))
+		}
 		state.Put("instance_ip", inst.PrivateIP)
 		ui.Say(fmt.Sprintf("SSH via private IP %s (use_floating_ip=false)", inst.PrivateIP))
 		return multistep.ActionContinue
@@ -30,7 +33,10 @@ func (s *stepFloatingIP) Run(ctx context.Context, state multistep.StateBag) mult
 	ui.Say("Allocating floating IP (cannot be set on VM create)...")
 	fip, err := driver.CreateFloatingIP(ctx, cfg.InstanceName+"-fip", inst.InterfaceID, cfg.Zone)
 	if err != nil {
-		return stepHalt(state, fmt.Errorf("create floating IP: %w", err))
+		return stepHalt(state, fmt.Errorf("create floating IP: %w", annotateQuota(err)))
+	}
+	if fip.IPAddress == "" {
+		return stepHalt(state, fmt.Errorf("floating IP %s has an empty address", fip.ID))
 	}
 	state.Put("floating_ip_id", fip.ID)
 	state.Put("instance_ip", fip.IPAddress)

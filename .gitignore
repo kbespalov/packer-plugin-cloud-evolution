@@ -7,3 +7,5 @@ coverage.out
 .idea/
 .vscode/
 .DS_Store
+*.pkrvars.hcl
+!*.pkrvars.hcl.example

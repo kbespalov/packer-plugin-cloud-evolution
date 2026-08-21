@@ -49,6 +49,37 @@ func TestPollRetryableThenOK(t *testing.T) {
 	}
 }
 
+func TestPollCapsSleepToDeadline(t *testing.T) {
+	t.Parallel()
+	start := time.Now()
+	err := poll(context.Background(), time.Hour, 40*time.Millisecond, func(context.Context) (bool, error) {
+		return false, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("%v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("poll slept past its deadline: %s", elapsed)
+	}
+}
+
+func TestPollCanceledContext(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	called := false
+	err := poll(ctx, time.Second, time.Minute, func(context.Context) (bool, error) {
+		called = true
+		return false, nil
+	})
+	if called {
+		t.Fatal("must not call fn after ctx is already done")
+	}
+	if err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("%v", err)
+	}
+}
+
 func TestPollFatalError(t *testing.T) {
 	t.Parallel()
 	want := errors.New("boom")

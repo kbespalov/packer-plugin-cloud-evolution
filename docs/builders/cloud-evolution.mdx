@@ -22,14 +22,14 @@ Creates a **private** [Evolution](https://cloud.ru) Compute image:
 
 ## Required
 
-- `project_id` (string) - Evolution project. Env `EVOLUTION_PROJECT_ID`.
-- `zone` (string) - Availability zone **UUID**.
-- `subnet_id` (string) - VPC subnet for the builder VM.
-- `flavor_id` (string) - Flavor UUID.
-- `source_image_id` (string) - Source catalog image.
-- `image_name` (string) - Private image name, unique in the project.
-- `key_id` / `key_secret` or `token` - IAM. Env `EVOLUTION_KEY_ID`,
-  `EVOLUTION_KEY_SECRET`, `EVOLUTION_TOKEN`.
+- `project_id` (string) - Evolution project. Env `CLOUDRU_EVOLUTION_PROJECT_ID`.
+- `zone` (string) - Availability zone **UUID**. Env `CLOUDRU_EVOLUTION_ZONE_ID`.
+- `subnet_id` (string) - VPC subnet for the builder VM. Env `CLOUDRU_EVOLUTION_SUBNET_ID`.
+- `flavor_id` (string) - Flavor UUID. Env `CLOUDRU_EVOLUTION_FLAVOR_ID`.
+- `source_image_id` (string) - Source catalog image. Env `CLOUDRU_EVOLUTION_SOURCE_IMAGE_ID`.
+- `image_name` (string) - Private image name, unique in the project. Env `CLOUDRU_EVOLUTION_IMAGE_NAME`.
+- `key_id` / `key_secret` or `token` - IAM. Env `CLOUDRU_EVOLUTION_KEY_ID`,
+  `CLOUDRU_EVOLUTION_KEY_SECRET`, `CLOUDRU_EVOLUTION_TOKEN`.
 
 ## Optional
 
@@ -39,11 +39,11 @@ Creates a **private** [Evolution](https://cloud.ru) Compute image:
 - `disk_type` (string) - `SSD` or `HDD`. Default `SSD`.
 - `instance_name` (string) - Default `packer-<uuid>`.
 - `image_description` (string)
-- `security_group_ids` ([]string)
+- `security_group_ids` ([]string) - Env `CLOUDRU_EVOLUTION_SECURITY_GROUP_IDS` (comma-separated).
 - `use_floating_ip` (bool) - Default `true`. FIP is created **after** the NIC
   exists; `new_floating_ip` on create is rejected.
 - `skip_create_image` (bool) - Provision only.
-- `state_timeout` (duration) - Default `15m`.
+- `state_timeout` (duration) - Default `30m`.
 - `poll_interval` (duration) - Default `5s`.
 - `compute_url`, `iam_url` - Override API hosts.
 
@@ -60,3 +60,11 @@ Plus the standard communicator (`ssh_username`, `ssh_private_key_file`, …).
   (`cloud_init_is_given_for_not_private_image`).
 - `availability_zones[].enabled` is forbidden on image create.
 - VM list pagination is `offset`/`limit`, not `page_size`.
+- Teardown: delete the floating IP, then the VM. Immediate `DELETE` of a
+  stopped VM that just lost its FIP is `422 floating_ip_can_not_be_detached_*`.
+- `POST /api/v1/images` can return `organization_quota_exceeded` for
+  `compute.image.custome`. Delete an unused private image and retry.
+- A VM, disk, or image that enters `error`/`failed` fails the build immediately.
+- An image that is created but never becomes ready is deleted on teardown.
+- `disk_size_gb` must be at least the source image `min_disk`.
+- `zone` is the availability zone UUID, not the display name (`ru.AZ-2`).

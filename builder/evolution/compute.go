@@ -8,8 +8,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
+
+const fipAddressTimeout = 2 * time.Minute
 
 type vmCreateDisk struct {
 	Name         string `json:"name"`
@@ -46,11 +50,19 @@ type vmIfaceView struct {
 	FloatingIP *vmFloatingIP `json:"floating_ip"`
 }
 
+type vmDiskView struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Bootable bool   `json:"bootable"`
+	Primary  bool   `json:"primary"`
+}
+
 type vmView struct {
 	ID         string        `json:"id"`
 	Name       string        `json:"name"`
 	State      string        `json:"state"`
 	Interfaces []vmIfaceView `json:"interfaces"`
+	Disks      []vmDiskView  `json:"disks"`
 }
 
 type listPage[T any] struct {
@@ -99,6 +111,7 @@ type imageView struct {
 	Name              string        `json:"name"`
 	Type              string        `json:"type"`
 	Public            bool          `json:"public"`
+	MinDisk           int           `json:"min_disk"`
 	UserDataTemplate  string        `json:"user_data_template"`
 	AvailabilityZones []imageAZView `json:"availability_zones"`
 }
@@ -192,13 +205,12 @@ func (c *Client) FindDisk(ctx context.Context, name string) (Disk, error) {
 	q := url.Values{}
 	q.Set("project_id", c.projectID)
 	q.Set("name", name)
-	q.Set("limit", "50")
-	var page listPage[diskView]
-	if err := c.do(ctx, http.MethodGet, "/api/v1/disks?"+q.Encode(), nil, &page); err != nil {
+	items, err := listAll[diskView](ctx, c, "/api/v1/disks", q)
+	if err != nil {
 		return Disk{}, err
 	}
 	var matches []diskView
-	for _, item := range page.Items {
+	for _, item := range items {
 		if item.Name == name {
 			matches = append(matches, item)
 		}
@@ -227,6 +239,59 @@ func (c *Client) GetImage(ctx context.Context, id string) (Image, error) {
 		return Image{}, err
 	}
 	return imageFromView(view), nil
+}
+
+func (c *Client) FindImage(ctx context.Context, name string) (Image, error) {
+	q := url.Values{}
+	q.Set("project_id", c.projectID)
+	q.Set("name", name)
+	items, err := listAll[imageView](ctx, c, "/api/v1/images", q)
+	if err != nil {
+		return Image{}, err
+	}
+	var matches []imageView
+	for _, item := range items {
+		if item.Name == name {
+			matches = append(matches, item)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return Image{}, &APIError{Status: http.StatusNotFound, Code: "not_found", Message: "image " + name}
+	case 1:
+		return imageFromView(matches[0]), nil
+	default:
+		return Image{}, fmt.Errorf("find image %q: %d matches", name, len(matches))
+	}
+}
+
+// listAll walks offset/limit pages. page_size is 422 on Evolution.
+func listAll[T any](ctx context.Context, c *Client, path string, q url.Values) ([]T, error) {
+	if q == nil {
+		q = url.Values{}
+	}
+	const limit = 50
+	const maxPages = 20
+	var all []T
+	for pageNum := 0; pageNum < maxPages; pageNum++ {
+		q.Set("limit", strconv.Itoa(limit))
+		q.Set("offset", strconv.Itoa(pageNum*limit))
+		if q.Get("page_size") != "" {
+			return nil, fmt.Errorf("page_size is not allowed on Evolution lists")
+		}
+		var page listPage[T]
+		if err := c.do(ctx, http.MethodGet, path+"?"+q.Encode(), nil, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Items...)
+		if len(page.Items) == 0 || len(page.Items) < limit {
+			break
+		}
+		if page.Total > 0 && len(all) >= page.Total {
+			break
+		}
+	}
+	return all, nil
 }
 
 func (c *Client) CreateImage(ctx context.Context, req CreateImageRequest) (Image, error) {
@@ -259,6 +324,14 @@ func (c *Client) DeleteImage(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodDelete, "/api/v1/images/"+url.PathEscape(id), nil, nil)
 }
 
+func (c *Client) GetFloatingIP(ctx context.Context, id string) (FloatingIP, error) {
+	var view fipView
+	if err := c.do(ctx, http.MethodGet, "/api/v1/floating-ips/"+url.PathEscape(id), nil, &view); err != nil {
+		return FloatingIP{}, err
+	}
+	return FloatingIP{ID: view.ID, Name: view.Name, IPAddress: view.IPAddress}, nil
+}
+
 func (c *Client) CreateFloatingIP(ctx context.Context, name, interfaceID, zone string) (FloatingIP, error) {
 	var view fipView
 	err := c.do(ctx, http.MethodPost, "/api/v1/floating-ips", fipCreate{
@@ -270,7 +343,32 @@ func (c *Client) CreateFloatingIP(ctx context.Context, name, interfaceID, zone s
 	if err != nil {
 		return FloatingIP{}, err
 	}
-	return FloatingIP{ID: view.ID, Name: view.Name, IPAddress: view.IPAddress}, nil
+	out := FloatingIP{ID: view.ID, Name: view.Name, IPAddress: view.IPAddress}
+	if out.ID == "" {
+		return FloatingIP{}, fmt.Errorf("create floating IP: empty id")
+	}
+	if out.IPAddress != "" {
+		return out, nil
+	}
+	last := out
+	err = poll(ctx, 2*time.Second, fipAddressTimeout, func(ctx context.Context) (bool, error) {
+		got, getErr := c.GetFloatingIP(ctx, out.ID)
+		if getErr != nil {
+			if isNotFound(getErr) {
+				return false, nil
+			}
+			return false, getErr
+		}
+		last = got
+		return got.IPAddress != "", nil
+	})
+	if err != nil {
+		if last.IPAddress == "" {
+			return last, fmt.Errorf("floating IP %s has an empty address: %w", out.ID, err)
+		}
+		return last, err
+	}
+	return last, nil
 }
 
 func (c *Client) DeleteFloatingIP(ctx context.Context, id string) error {
@@ -287,6 +385,27 @@ func instanceFromView(view vmView, bootName string) Instance {
 				out.FloatingIP = iface.FloatingIP.IPAddress
 				out.FloatingIPID = iface.FloatingIP.ID
 			}
+		}
+	}
+	for _, disk := range view.Disks {
+		if disk.ID == "" {
+			continue
+		}
+		use := disk.Bootable || disk.Primary || (bootName != "" && disk.Name == bootName)
+		if out.BootDiskID == "" || use {
+			out.BootDiskID = disk.ID
+			if disk.Name != "" {
+				out.BootDiskName = disk.Name
+			}
+			if disk.Bootable || disk.Primary {
+				break
+			}
+		}
+	}
+	if out.BootDiskID == "" && len(view.Disks) == 1 && view.Disks[0].ID != "" {
+		out.BootDiskID = view.Disks[0].ID
+		if view.Disks[0].Name != "" {
+			out.BootDiskName = view.Disks[0].Name
 		}
 	}
 	return out
@@ -317,6 +436,7 @@ func imageFromView(view imageView) Image {
 		Name:             view.Name,
 		Type:             view.Type,
 		Public:           view.Public,
+		MinDiskGiB:       view.MinDisk,
 		UserDataTemplate: view.UserDataTemplate,
 		ZoneStates:       states,
 	}

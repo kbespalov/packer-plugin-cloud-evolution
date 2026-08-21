@@ -12,14 +12,15 @@ import (
 
 // FakeDriver is an in-memory Driver for unit tests. It does not speak HTTP.
 type FakeDriver struct {
-	mu         sync.Mutex
-	instances  map[string]Instance
-	disks      map[string]Disk
-	images     map[string]Image
-	fips       map[string]FloatingIP
-	createErr  error
-	imageReady bool
-	next       int
+	mu           sync.Mutex
+	instances    map[string]Instance
+	disks        map[string]Disk
+	images       map[string]Image
+	fips         map[string]FloatingIP
+	createErr    error
+	findImageErr error
+	imageReady   bool
+	next         int
 }
 
 func NewFakeDriver() *FakeDriver {
@@ -74,6 +75,9 @@ func (f *FakeDriver) WaitInstance(ctx context.Context, id string, pred func(Inst
 	got, err := f.GetInstance(ctx, id)
 	if err != nil {
 		return Instance{}, err
+	}
+	if got.Failed() {
+		return got, fmt.Errorf("instance %s entered failed state %q", got.ID, got.State)
 	}
 	if pred != nil && !pred(got) {
 		return got, fmt.Errorf("instance %s state %s did not match", id, got.State)
@@ -146,6 +150,9 @@ func (f *FakeDriver) WaitDisk(ctx context.Context, id string, pred func(Disk) bo
 	if err != nil {
 		return Disk{}, err
 	}
+	if got.Failed() {
+		return got, fmt.Errorf("disk %s entered failed state %q", got.ID, got.State)
+	}
 	if pred != nil && !pred(got) {
 		return got, fmt.Errorf("disk %s state %s did not match", id, got.State)
 	}
@@ -167,6 +174,20 @@ func (f *FakeDriver) GetImage(_ context.Context, id string) (Image, error) {
 		return Image{}, &APIError{Status: http.StatusNotFound, Code: "not_found"}
 	}
 	return got, nil
+}
+
+func (f *FakeDriver) FindImage(_ context.Context, name string) (Image, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.findImageErr != nil {
+		return Image{}, f.findImageErr
+	}
+	for _, img := range f.images {
+		if img.Name == name {
+			return img, nil
+		}
+	}
+	return Image{}, &APIError{Status: http.StatusNotFound, Code: "not_found", Message: "image " + name}
 }
 
 func (f *FakeDriver) CreateImage(_ context.Context, req CreateImageRequest) (Image, error) {

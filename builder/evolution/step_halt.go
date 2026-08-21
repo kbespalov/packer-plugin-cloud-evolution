@@ -18,6 +18,16 @@ func stepHalt(state multistep.StateBag, err error) multistep.StepAction {
 	return multistep.ActionHalt
 }
 
+func ignoreNotFound(err error) error {
+	if err == nil {
+		return nil
+	}
+	if api, ok := AsAPIError(err); ok && api.NotFound() {
+		return nil
+	}
+	return err
+}
+
 func uiFromState(state multistep.StateBag) packersdk.Ui {
 	if raw, ok := state.GetOk("ui"); ok {
 		if ui, ok := raw.(packersdk.Ui); ok && ui != nil {

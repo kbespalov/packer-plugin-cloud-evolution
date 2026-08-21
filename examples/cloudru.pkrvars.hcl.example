@@ -1,0 +1,8 @@
+# Copy to *.auto.pkrvars.hcl only if you must; prefer the environment.
+# gitignores *.pkrvars.hcl
+
+# zone_id         = "00000000-0000-0000-0000-000000000001"
+# subnet_id       = "00000000-0000-0000-0000-000000000002"
+# flavor_id       = "00000000-0000-0000-0000-000000000003"
+# source_image_id = "00000000-0000-0000-0000-000000000004"
+# image_name      = "example-golden"
