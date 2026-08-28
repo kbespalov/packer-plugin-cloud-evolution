@@ -101,6 +101,13 @@ func (b *Builder) Run(ctx context.Context, ui packersdk.Ui, hook packersdk.Hook)
 }
 
 func commHost(state multistep.StateBag) (string, error) {
+	// ssh_host in the template overrides the discovered address (bastion,
+	// DNAT, VPN split-horizon setups).
+	if raw, ok := state.GetOk("config"); ok {
+		if cfg, ok := raw.(*Config); ok && cfg != nil && cfg.Comm.Host() != "" {
+			return cfg.Comm.Host(), nil
+		}
+	}
 	if ip, ok := state.GetOk("instance_ip"); ok {
 		if s, ok := ip.(string); ok && s != "" {
 			return s, nil

@@ -32,13 +32,18 @@ func (s *stepFloatingIP) Run(ctx context.Context, state multistep.StateBag) mult
 	}
 	ui.Say("Allocating floating IP (cannot be set on VM create)...")
 	fip, err := driver.CreateFloatingIP(ctx, cfg.InstanceName+"-fip", inst.InterfaceID, cfg.Zone)
+	// Track the ID even on error: CreateFloatingIP can fail after the FIP is
+	// allocated (address never materialized). Cleanup must delete it — it
+	// counts against the small org quota.
+	if fip.ID != "" {
+		state.Put("floating_ip_id", fip.ID)
+	}
 	if err != nil {
 		return stepHalt(state, fmt.Errorf("create floating IP: %w", annotateQuota(err)))
 	}
 	if fip.IPAddress == "" {
 		return stepHalt(state, fmt.Errorf("floating IP %s has an empty address", fip.ID))
 	}
-	state.Put("floating_ip_id", fip.ID)
 	state.Put("instance_ip", fip.IPAddress)
 	ui.Say(fmt.Sprintf("Floating IP %s (%s)", fip.IPAddress, fip.ID))
 	return multistep.ActionContinue

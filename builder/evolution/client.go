@@ -38,13 +38,17 @@ const (
 // Retry policy (no idempotency key on this API):
 //   - GET/DELETE: 429 / 502 / 503 / 504 and transient net errors
 //   - POST: 429 only, plus a single 401 after IAM refresh
-//   - POST timeout / 5xx is not retried (the object may already exist)
+//   - POST timeout / 5xx is not retried (the object may already exist);
+//     CreateInstance instead recovers by looking the VM up by name
 type Client struct {
 	baseURL    string
 	projectID  string
 	tokens     TokenSource
 	httpClient *http.Client
 	userAgent  string
+	// Zero means the createRecover* defaults; tests shrink these.
+	recoverInterval time.Duration
+	recoverTimeout  time.Duration
 }
 
 // ClientConfig configures Client.
@@ -279,6 +283,10 @@ type retryAfterError struct {
 	*APIError
 	after time.Duration
 }
+
+// Unwrap lets errors.As reach the APIError. Without it, a 429/503 with a
+// Retry-After header would stop matching AsAPIError and never be retried.
+func (e *retryAfterError) Unwrap() error { return e.APIError }
 
 func retryAfterFrom(err error) time.Duration {
 	var ra *retryAfterError

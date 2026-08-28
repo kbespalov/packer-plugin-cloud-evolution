@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Fix `Retry-After` handling: a 429/503 carrying the header was wrapped in an
+  error that no longer matched `AsAPIError` and was never retried.
+- Recover `CreateInstance` after an ambiguous POST `/vms` failure (5xx or
+  transport timeout): the VM name is the idempotency key, so poll the list
+  briefly and adopt the VM instead of failing the build. Scoped to the `/vms`
+  request itself; an IAM failure inside the same call is never "recovered".
+- Track resources for cleanup even on failure: a floating IP allocated
+  without an address, and the boot disk when the instance wait fails.
+- Retry transient transport errors (dial, TLS, timeout) on IAM token fetch.
+- `ssh_host` now overrides the discovered address (bastion / DNAT setups).
+- Reset floating-IP fields when the primary NIC replaces an earlier one in
+  the instance view.
+- Tests are race-clean: atomic request counters, no `t.Fatal` inside HTTP
+  handlers, `go test -race` passes.
+
 ## 0.1.0 (2026-08-22)
 
 - Initial `cloud-evolution` builder: IAM key/token, VM `[one]`, floating IP after NIC,

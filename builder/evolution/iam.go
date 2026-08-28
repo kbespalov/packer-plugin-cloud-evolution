@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -149,6 +150,12 @@ func (s *iamKeySource) fetch(ctx context.Context) (string, time.Time, error) {
 		}
 		last = err
 		if api, ok := AsAPIError(err); ok && api.Retryable() {
+			continue
+		}
+		// Token issuance has no side effects worth protecting; transient
+		// transport failures (dial, TLS, timeout) are safe to retry.
+		var re *RequestError
+		if errors.As(err, &re) && (re.Timeout || re.Temporary) {
 			continue
 		}
 		return "", time.Time{}, err

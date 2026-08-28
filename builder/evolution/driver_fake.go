@@ -19,6 +19,8 @@ type FakeDriver struct {
 	fips         map[string]FloatingIP
 	createErr    error
 	findImageErr error
+	waitErr      error
+	fipErr       error
 	imageReady   bool
 	next         int
 }
@@ -72,6 +74,9 @@ func (f *FakeDriver) GetInstance(_ context.Context, id string) (Instance, error)
 }
 
 func (f *FakeDriver) WaitInstance(ctx context.Context, id string, pred func(Instance) bool) (Instance, error) {
+	if f.waitErr != nil {
+		return Instance{}, f.waitErr
+	}
 	got, err := f.GetInstance(ctx, id)
 	if err != nil {
 		return Instance{}, err
@@ -232,6 +237,12 @@ func (f *FakeDriver) CreateFloatingIP(_ context.Context, name, _, _ string) (Flo
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	id := f.id("fip")
+	if f.fipErr != nil {
+		// Allocated but unusable: the ID exists, the address never came.
+		fip := FloatingIP{ID: id, Name: name}
+		f.fips[id] = fip
+		return fip, f.fipErr
+	}
 	fip := FloatingIP{ID: id, Name: name, IPAddress: "203.0.113.10"}
 	f.fips[id] = fip
 	return fip, nil

@@ -89,6 +89,11 @@ func (s *stepCreateInstance) Run(ctx context.Context, state multistep.StateBag) 
 	}
 	state.Put("instance_id", inst.ID)
 	state.Put("instance_name", inst.Name)
+	// Track the boot disk before the wait: when WaitInstance fails, Cleanup
+	// must still delete the disk (VM delete does not always cascade).
+	if inst.BootDiskID != "" {
+		state.Put("disk_id", inst.BootDiskID)
+	}
 	ui.Say(fmt.Sprintf("Waiting for instance %s (NIC + private IP)...", inst.ID))
 	ready, err := driver.WaitInstance(ctx, inst.ID, Instance.Provisionable)
 	if err != nil {

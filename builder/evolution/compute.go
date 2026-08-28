@@ -5,7 +5,9 @@ package evolution
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,7 +15,14 @@ import (
 	"time"
 )
 
-const fipAddressTimeout = 2 * time.Minute
+const (
+	fipAddressTimeout = 2 * time.Minute
+	vmsCreatePath     = "/api/v1.1/vms"
+	// After an ambiguous POST /vms failure the VM may take a few seconds
+	// to appear in the list API. Poll briefly before giving up.
+	createRecoverInterval = 2 * time.Second
+	createRecoverTimeout  = 15 * time.Second
+)
 
 type vmCreateDisk struct {
 	Name         string `json:"name"`
@@ -168,13 +177,104 @@ func (c *Client) CreateInstance(ctx context.Context, req CreateInstanceRequest) 
 	// POST /api/v1.1/vms is a batch handler. One VM = a one-element array.
 	// An object or [] is 422. Do not send a batch of N.
 	var created []vmView
-	if err := c.do(ctx, http.MethodPost, "/api/v1.1/vms", []vmCreateRequest{body}, &created); err != nil {
+	if err := c.do(ctx, http.MethodPost, vmsCreatePath, []vmCreateRequest{body}, &created); err != nil {
+		if recovered, recErr := c.recoverCreatedInstance(ctx, req, err); recErr == nil {
+			return recovered, nil
+		}
 		return Instance{}, err
 	}
 	if len(created) != 1 || created[0].ID == "" {
 		return Instance{}, fmt.Errorf("create vm: expected exactly one VM, got %d", len(created))
 	}
 	return instanceFromView(created[0], req.DiskName), nil
+}
+
+// Evolution often returns HTTP 500 on POST /vms after the VM is already
+// accepted; a transport timeout leaves the same ambiguity. The VM name is
+// the idempotency key (Packer defaults to a unique packer-<uuid> per run,
+// and Evolution rejects duplicate names), so poll for the VM by name
+// instead of POSTing again. If the VM never shows up, return the original
+// error untouched.
+//
+// Caveat: with a hand-picked instance_name, a VM left over from an earlier
+// run would be adopted here (and destroyed by cleanup). Keep instance_name
+// unique per run or leave it at the default.
+func (c *Client) recoverCreatedInstance(ctx context.Context, req CreateInstanceRequest, cause error) (Instance, error) {
+	if !createOutcomeUnknown(cause) {
+		return Instance{}, cause
+	}
+	interval, timeout := c.recoverInterval, c.recoverTimeout
+	if interval <= 0 {
+		interval = createRecoverInterval
+	}
+	if timeout <= 0 {
+		timeout = createRecoverTimeout
+	}
+	var found vmView
+	pollErr := poll(ctx, interval, timeout, func(ctx context.Context) (bool, error) {
+		view, err := c.findInstanceView(ctx, req.Name)
+		if err != nil {
+			if isNotFound(err) {
+				return false, nil // the list may lag behind the create
+			}
+			return false, err
+		}
+		found = view
+		return view.ID != "", nil
+	})
+	if pollErr != nil || found.ID == "" {
+		return Instance{}, cause
+	}
+	log.Printf("[WARN] evolution create vm %q failed ambiguously (%s) but the VM exists; adopting %s", req.Name, cause, found.ID)
+	return instanceFromView(found, req.DiskName), nil
+}
+
+// createOutcomeUnknown reports whether a POST error leaves the resource
+// possibly created on the server: a 5xx response, or a transport timeout /
+// mid-flight connection failure. A 4xx means the request was rejected.
+// The Path check matters: an IAM token failure inside the same call carries
+// the IAM path and means the create request was never sent.
+func createOutcomeUnknown(err error) bool {
+	if api, ok := AsAPIError(err); ok {
+		return api.Status >= 500 && api.Path == vmsCreatePath
+	}
+	var re *RequestError
+	if errors.As(err, &re) {
+		return (re.Timeout || re.Temporary) && re.Path == vmsCreatePath
+	}
+	return false
+}
+
+func (c *Client) FindInstance(ctx context.Context, name string) (Instance, error) {
+	view, err := c.findInstanceView(ctx, name)
+	if err != nil {
+		return Instance{}, err
+	}
+	return instanceFromView(view, ""), nil
+}
+
+func (c *Client) findInstanceView(ctx context.Context, name string) (vmView, error) {
+	q := url.Values{}
+	q.Set("project_id", c.projectID)
+	q.Set("name", name)
+	items, err := listAll[vmView](ctx, c, "/api/v1/vms", q)
+	if err != nil {
+		return vmView{}, err
+	}
+	var matches []vmView
+	for _, item := range items {
+		if item.Name == name {
+			matches = append(matches, item)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return vmView{}, &APIError{Status: http.StatusNotFound, Code: "not_found", Message: "vm " + name}
+	case 1:
+		return matches[0], nil
+	default:
+		return vmView{}, fmt.Errorf("find vm %q: %d matches", name, len(matches))
+	}
 }
 
 func (c *Client) GetInstance(ctx context.Context, id string) (Instance, error) {
@@ -381,6 +481,9 @@ func instanceFromView(view vmView, bootName string) Instance {
 		if iface.Primary || out.PrivateIP == "" {
 			out.PrivateIP = iface.IPAddress
 			out.InterfaceID = iface.ID
+			// Reset both: a FIP inherited from an earlier non-primary NIC
+			// must not survive the switch to the primary one.
+			out.FloatingIP, out.FloatingIPID = "", ""
 			if iface.FloatingIP != nil {
 				out.FloatingIP = iface.FloatingIP.IPAddress
 				out.FloatingIPID = iface.FloatingIP.ID
