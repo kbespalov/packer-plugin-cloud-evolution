@@ -7,11 +7,11 @@ import "github.com/hashicorp/packer-plugin-sdk/version"
 
 var (
 	// Version is the main version number that is being run at the moment.
-	Version = "0.1.0"
+	Version = "0.2.0"
 
 	// VersionPrerelease is empty for a final release. GoReleaser / `make dev`
 	// may override this via -X. Packer rejects `>= 0.1.0-dev` constraints, so
-	// the default installable binary is 0.1.0.
+	// the default installable binary is 0.2.0.
 	VersionPrerelease = ""
 
 	// PluginVersion is what Packer reports for this plugin process.

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-08-29)
 
 - Fix `Retry-After` handling: a 429/503 carrying the header was wrapped in an
   error that no longer matched `AsAPIError` and was never retried.
