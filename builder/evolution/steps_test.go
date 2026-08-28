@@ -257,6 +257,55 @@ func TestStepCreateImageKeepsSuccessfulImage(t *testing.T) {
 	}
 }
 
+func TestStepFloatingIPTracksLeakedFIPOnError(t *testing.T) {
+	t.Parallel()
+	driver := NewFakeDriver()
+	driver.fipErr = errors.New("address never materialized")
+	cfg := testCfg()
+	state := testState(t, driver, cfg)
+	state.Put("instance", Instance{ID: "vm-1", PrivateIP: "10.0.0.8", InterfaceID: "if-1"})
+	if action := (&stepFloatingIP{}).Run(context.Background(), state); action != multistep.ActionHalt {
+		t.Fatal("expected halt")
+	}
+	raw, ok := state.GetOk("floating_ip_id")
+	if id, _ := raw.(string); !ok || id == "" {
+		t.Fatal("an allocated-but-broken FIP must be tracked so cleanup deletes it")
+	}
+}
+
+func TestStepCreateInstanceTracksDiskWhenWaitFails(t *testing.T) {
+	t.Parallel()
+	driver := NewFakeDriver()
+	driver.images["src-img"] = Image{ID: "src-img", Name: "Ubuntu-24.04", Type: "public"}
+	driver.waitErr = errors.New("wait instance: timeout")
+	cfg := testCfg()
+	cfg.Comm.SSHPublicKey = []byte("ssh-ed25519 AAAA")
+	state := testState(t, driver, cfg)
+	if action := (&stepCreateInstance{}).Run(context.Background(), state); action != multistep.ActionHalt {
+		t.Fatal("expected halt when the wait fails")
+	}
+	if raw, ok := state.GetOk("disk_id"); !ok || raw.(string) == "" {
+		t.Fatal("boot disk must be tracked before the wait so cleanup deletes it")
+	}
+	if raw, ok := state.GetOk("instance_id"); !ok || raw.(string) == "" {
+		t.Fatal("instance must be tracked before the wait")
+	}
+}
+
+func TestCommHostPrefersSSHHostOverride(t *testing.T) {
+	t.Parallel()
+	cfg := testCfg()
+	cfg.Comm.Type = "ssh"
+	cfg.Comm.SSHHost = "bastion.example"
+	state := new(multistep.BasicStateBag)
+	state.Put("config", cfg)
+	state.Put("instance_ip", "10.0.0.8")
+	host, err := commHost(state)
+	if err != nil || host != "bastion.example" {
+		t.Fatalf("%s %v", host, err)
+	}
+}
+
 func TestStepFloatingIPRequiresPrivateIP(t *testing.T) {
 	t.Parallel()
 	use := false

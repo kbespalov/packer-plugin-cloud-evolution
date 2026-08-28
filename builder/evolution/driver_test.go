@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -37,10 +38,9 @@ func TestWaitInstanceFailsFastOnErrorState(t *testing.T) {
 
 func TestWaitInstanceRetriesInitial404(t *testing.T) {
 	t.Parallel()
-	n := 0
+	var n atomic.Int32
 	d := testDriver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n++
-		if n == 1 {
+		if n.Add(1) == 1 {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`[{"code":"not_found"}]`))
 			return
@@ -58,10 +58,9 @@ func TestWaitInstanceRetriesInitial404(t *testing.T) {
 
 func TestWaitInstanceErrorsAfterDisappear(t *testing.T) {
 	t.Parallel()
-	n := 0
+	var n atomic.Int32
 	d := testDriver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n++
-		if n == 1 {
+		if n.Add(1) == 1 {
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "vm-1", "name": "n", "state": "creating"})
 			return
 		}
@@ -97,37 +96,37 @@ func TestStopInstanceMissingIsOK(t *testing.T) {
 
 func TestDetachDiskAlreadyAvailable(t *testing.T) {
 	t.Parallel()
-	posts := 0
+	var posts atomic.Int32
 	d := testDriver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			posts++
+			posts.Add(1)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": "disk-1", "name": "boot", "state": "available"})
 	}))
 	if err := d.DetachDisk(context.Background(), "vm-1", "disk-1"); err != nil {
 		t.Fatal(err)
 	}
-	if posts != 0 {
-		t.Fatalf("must not POST detach when already available, posts=%d", posts)
+	if posts.Load() != 0 {
+		t.Fatalf("must not POST detach when already available, posts=%d", posts.Load())
 	}
 }
 
 func TestDeleteDiskWaitsUntilFree(t *testing.T) {
 	t.Parallel()
-	gets := 0
+	var gets atomic.Int32
 	d := testDriver(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			gets++
 			state := "in_use"
-			if gets >= 2 {
+			if gets.Add(1) >= 2 {
 				state = "available"
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "disk-1", "name": "boot", "state": state})
 		case http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
 		default:
-			t.Fatalf("%s", r.Method)
+			t.Errorf("%s", r.Method)
+			http.Error(w, "unexpected", http.StatusInternalServerError)
 		}
 	}))
 	if err := d.DeleteDisk(context.Background(), "disk-1"); err != nil {

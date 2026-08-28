@@ -41,6 +41,30 @@ func TestShouldRetry(t *testing.T) {
 	}
 }
 
+// Regression: retryAfterError embeds *APIError but embedding alone does not
+// satisfy errors.As — without Unwrap, a 429/503 carrying a Retry-After
+// header stopped matching AsAPIError and was never retried.
+func TestRetryAfterErrorUnwrapsToAPIError(t *testing.T) {
+	t.Parallel()
+	wrapped := &retryAfterError{
+		APIError: &APIError{Status: http.StatusTooManyRequests, Code: "throttled"},
+		after:    time.Second,
+	}
+	api, ok := AsAPIError(wrapped)
+	if !ok || api.Status != http.StatusTooManyRequests {
+		t.Fatalf("AsAPIError must see through retryAfterError, ok=%v", ok)
+	}
+	if !shouldRetry(http.MethodPost, wrapped) {
+		t.Fatal("POST 429 with Retry-After must be retried")
+	}
+	if !shouldRetry(http.MethodGet, &retryAfterError{APIError: &APIError{Status: 503}, after: time.Second}) {
+		t.Fatal("GET 503 with Retry-After must be retried")
+	}
+	if retryAfterFrom(wrapped) != time.Second {
+		t.Fatal("retry hint lost")
+	}
+}
+
 func TestRetryAfterSeconds(t *testing.T) {
 	t.Parallel()
 	h := http.Header{}
